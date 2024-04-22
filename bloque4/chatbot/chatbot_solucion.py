@@ -27,41 +27,100 @@ llm = VertexAI(model_name="gemini-pro", temperature=0.1)
 
 
 ###################################################################################################################################
-# ##################################################################################################################################
-# ##################################################################################################################################
-# ##   TEMPLATES
+###################################################################################################################################
+###################################################################################################################################
+###   TEMPLATES
 
 # Template para obtener la descripción del producto en el que está interesado el usuario
-embedding_template = """ ... """
+embedding_template = """Eres el primer eslabón de una cadena que conformará un bot encargado de responder y asesorar sobre productos de
+una tienda en linea (ecommerce). 
+
+Un usuario realiza una pregunta y tú tienes que extraer las características principales del producto que menciona sin añadir absolutamente nada que no haya introducido el usuario.
+El objetivo es que a partir de tu output se generará un embedding para buscar el producto que pide el usuario en una base de datos vectorial.
+
+Por ejemplo, si el usuario escribe "Ahora que empieza el verano quiero unas gafas de sol negras" tú generarás "Gafas de sol negras".
+
+La pregunta introducida por el usuario es: "{question}"
+
+Output para generar el embedding: """
 
 
 # Template para obtener la recomendación para el usuario
-template = """ ... """
+template = """Eres un bot encargado de responder y asesorar sobre productos de
+una tienda en linea (ecommerce). Por lo tanto, se respetuoso y trata cordialmente a las personas.
+Si la pregunta suya no tiene nada que ver con asesoramiento de productos, dile que ese no es tu trabajo.
+
+Pregunta: {question}
+
+El resultado más similar encontrado en la base de datos de productos es el siguiente:
+{most_similar}
+
+Dile al cliente nuestra recomendación según lo que ha preguntado informándole de todo lo posible para que pueda decidirse en su compra como nombre del artículo o precio.
+Responde en el mismo idioma en el que te pregunten.
+
+Respuesta: """
 
 prompt_embedding_template = PromptTemplate.from_template(embedding_template)
 prompt_template = PromptTemplate.from_template(template)
 
 ###################################################################################################################################
-# ##################################################################################################################################
-# ##################################################################################################################################
-# ##   CHAINS
+###################################################################################################################################
+###################################################################################################################################
+###   CHAINS
 
-chain = 
-embedding_chain = 
+chain = prompt_template | llm
+embedding_chain = prompt_embedding_template | llm
 
 ###################################################################################################################################
-# ##################################################################################################################################
-# ##################################################################################################################################
-# ##   FUNCIÓN PRINCIPAL
+###################################################################################################################################
+###################################################################################################################################
+###   FUNCIÓN PRINCIPAL
 
 def bot_answer(prompt):
+
+    # Ejecutamos la cadena chain_embedding para obtener la descripción del producto en el que está interesado el usuario utilizando Gemini
+    prompt_embedding = embedding_chain.invoke({"question": prompt})
+    print(f"Texto para embedding: {prompt_embedding}")
+    
+    # Construcción FindNeighborsRequest object
+    datapoint = aiplatform_v1.IndexDatapoint(
+      feature_vector=embeddings.embed_query(prompt_embedding)
+    )
+    query = aiplatform_v1.FindNeighborsRequest.Query(
+      datapoint=datapoint,     
+      neighbor_count=3  # Número de vecinos cercanos a recuperar
+    )
+    request = aiplatform_v1.FindNeighborsRequest(
+      index_endpoint=INDEX_ENDPOINT,
+      deployed_index_id=DEPLOYED_INDEX_ID,
+      queries=[query],
+      return_full_datapoint=False,
+    )
+
+    # Ejecutamos request y obtenemos el id en BBDD del producto más similar a la descripción pedida por el usuario
+    response = vector_search_client.find_neighbors(request)
+    neighbors = response.nearest_neighbors[0].neighbors 
+    most_similar = neighbors[0].datapoint.datapoint_id
+    
+    # Buscamos el ID en BigQuery para obtener el resto de información
+    sql = f"""
+    SELECT category, brand, name, retail_price as price, department as gender
+    FROM ia-ugr.ecommerce.products
+    WHERE ID = {most_similar}
+    ;
+    """
+    sql_result = client.query(sql).to_dataframe()
+    print(f"Resultado SQL es: {sql_result}")
+
+    # Ejecutamos la cadena chain para obtener la recomendación para el usuario utilizando la información recuparada de BigQuery y Gemini
+    bot_result = chain.invoke({"question": prompt, "most_similar": sql_result})
 
     return bot_result
 
 ###################################################################################################################################
-# ##################################################################################################################################
-# ##################################################################################################################################
-# ##   INTERFAZ DE USUARIO EN STREAMLIT
+###################################################################################################################################
+###################################################################################################################################
+###   INTERFAZ DE USUARIO EN STREAMLIT
 
 # Título
 st.title("Chatbot de ecommerce :sunglasses:")
