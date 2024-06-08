@@ -8,8 +8,8 @@ import os
 from langchain_google_vertexai import VertexAIEmbeddings
 
 # Configuración para el índice desplegado
-API_ENDPOINT="2069128544.us-central1-1043238928011.vdb.vertexai.goog"
-INDEX_ENDPOINT="projects/1043238928011/locations/us-central1/indexEndpoints/6459098649556156416"
+API_ENDPOINT="1173193209.europe-west1-1017560508533.vdb.vertexai.goog"
+INDEX_ENDPOINT="projects/1017560508533/locations/europe-west1/indexEndpoints/3571398484969914368"
 DEPLOYED_INDEX_ID="products_data_index_civica"
 
 # Cliente Vector Search
@@ -105,7 +105,7 @@ def bot_answer(prompt):
     # Buscamos el ID en BigQuery para obtener el resto de información
     sql = f"""
     SELECT category, brand, name, retail_price as price, department as gender
-    FROM ia-ugr.ecommerce.products
+    FROM master-424910.ecommerce.products
     WHERE ID = {most_similar}
     ;
     """
